@@ -266,22 +266,45 @@ verbosity bias và self-preference bằng cách nào?
 
 ### Exercise 3.4 — Framework Comparison (Bonus +10)
 
-Chỉ làm sau khi hoàn thành 3.1–3.3. Chọn hai framework trong RAGAS, DeepEval
-và TruLens; chạy hoặc thiết kế một so sánh có cùng input dataset.
+So sánh được **thiết kế** trên cùng 20 records của `golden_dataset.json` và 20
+traces/answers trong `artifacts/actual_answers.json`. Chưa chạy RAGAS hay
+DeepEval độc lập trong repo này, nên bảng không tuyên bố các score chưa đo; mục
+tiêu là protocol có thể chạy lại công bằng khi cài hai framework.
 
-| Tiêu chí | Framework 1: ____ | Framework 2: ____ |
+| Tiêu chí | Framework 1: RAGAS | Framework 2: DeepEval |
 |---|---|---|
-| Setup complexity | | |
-| Metrics available | | |
-| CI/CD integration | | |
-| Kết quả trên cùng dataset | | |
-| Insight rút ra | | |
+| Setup complexity | Medium. Chuyển mỗi record thành sample gồm `user_input`, `response`, `reference` và `retrieved_contexts`; cấu hình evaluator LLM/embeddings, cache và dataset run. | Medium–high. Tạo `LLMTestCase` cho cùng record, khai báo từng metric và threshold; phải cấu hình judge model/key, nhưng cách tổ chức gần pytest-native. |
+| Metrics available | Chạy Faithfulness, Response Relevancy, Context Recall và Context Precision; có thể bổ sung Answer Accuracy. RAGAS đánh giá theo claim/context và hỗ trợ metric retrieval có reference. | Chạy `FaithfulnessMetric`, `AnswerRelevancyMetric`, `ContextualRecallMetric`, `ContextualPrecisionMetric`; thêm `GEval` rubric Safety/Privacy cho A01–A03 và nhận reason cho mỗi metric. |
+| CI/CD integration | Phù hợp offline benchmark: export metric aggregates, so baseline với current run và fail job nếu threshold/regression vượt gate. Cần tự bọc assertions/reporting theo CI đang dùng. | Mạnh cho unit-test workflow: `assert_test()`/pytest và `deepeval test run`, có threshold, caching và reason để debug failure trong CI. |
+| Kết quả trên cùng dataset | **Chưa đo thực nghiệm.** Input bắt buộc: question, actual answer, expected answer, 5 retrieved chunks; dùng cùng judge model, temperature 0, metric list và threshold với DeepEval. | **Chưa đo thực nghiệm.** Dùng đúng các field/chunks, cùng judge model, temperature 0 và threshold như RAGAS; lưu per-case score/reason để so với RAGAS và benchmark lexical hiện tại. |
+| Insight rút ra | Phù hợp để chẩn đoán tách retrieval và generation trên golden dataset có reference. Context Recall/Precision hữu ích để kiểm tra claim/evidence hơn word-set heuristic hiện tại. | Phù hợp đưa quality gate vào pytest/CI và debug case-level nhờ metric reasons; `GEval` có thể đánh giá safe refusal/privacy mà metric generic không nắm đủ. |
 
-- Scores có nhất quán không?
-- Framework nào strict hơn và vì sao?
-- Hai framework có tìm ra cùng failure cases không?
+**Protocol để so sánh công bằng**
 
-> *Phân tích:*
+1. Giữ nguyên 20 IDs, `question`, `expected_answer`, `actual_answer` và thứ tự 5
+   `retrieved_contexts` từ artifact; không rerun generator hay retriever.
+2. Với mỗi framework, đo bốn trục tương ứng: faithfulness, answer relevance,
+   context recall và context precision. Chuẩn hóa kết quả về 0–1.
+3. Dùng cùng judge model, temperature 0, seed nếu framework hỗ trợ, và chạy ba
+   lần; báo cáo mean, standard deviation, per-case reasons và cost/latency.
+4. Chọn trước một human-labeled calibration slice: A01, A02, A03, H01, H03,
+   M07. Human reviewer đánh dấu grounded/correct/safe trước khi xem điểm judge.
+5. Không kết luận chỉ từ score aggregate; review các disagreement, nhất là A02
+   và H03 đang bị word-overlap heuristic chấm thấp dù trace/semantic answer tốt.
+
+**Scores có nhất quán không?**
+
+> Chưa có score RAGAS/DeepEval thực nghiệm, nên chưa thể khẳng định consistency. Kỳ vọng hai framework sẽ cùng xác nhận A01 là lỗi safety/grounding vì scope evidence không được retrieve và answer thêm medical advice. Với A02 và H03, semantic judge có thể cho điểm cao hơn lexical benchmark hiện tại: A02 từ chối disclosure đúng, H03 nêu đúng severe-weather exception. Consistency phải được kết luận bằng correlation, agreement với human labels và inspection reasons, không chỉ bằng average gần nhau.
+
+**Framework nào strict hơn và vì sao?**
+
+> Không mặc định framework nào strict hơn trước khi chạy cùng judge/model. RAGAS có thể strict về claim coverage và relevance của context; DeepEval có thể nghiêm hơn ở deployment nếu từng `LLMTestCase`/metric có threshold và đặc biệt khi thêm `GEval` Safety/Privacy rubric. Với OrbitTech, strictness mong muốn là policy-specific: A01 phải fail tuyệt đối, còn A02/H03 không được fail chỉ vì paraphrase hoặc safe refusal ngắn.
+
+**Hai framework có tìm ra cùng failure cases không?**
+
+> Dự kiến cùng bắt A01; với E02, M07, H01 và H05, cả hai có thể đánh dấu thiếu conditions/date/action nếu câu trả lời thực sự rút gọn policy. Disagreement đáng giá nhất sẽ là A02 và H03: nếu semantic evaluator pass nhưng lexical core fail, human calibration sẽ quyết định điều chỉnh quality gate hoặc rubric, thay vì sửa generation để lặp lại nguyên văn evidence.
+
+> *Phân tích:* RAGAS có các RAG metrics cho response relevance, faithfulness, context recall và context precision; context recall/precision đều dùng reference hoặc reference-like evidence để kiểm tra coverage/ranking. DeepEval có Answer Relevancy và Faithfulness dạng LLM-as-a-judge, đồng thời hỗ trợ pytest-native CI và metric reasons. Vì benchmark này đã có expected answers, gold contexts và trace chunk theo thứ hạng, cả hai nhận được cùng input hợp lệ. Nguồn tham chiếu: [RAGAS metrics](https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/), [RAGAS Context Recall](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/context_recall/), [DeepEval Faithfulness](https://deepeval.com/docs/metrics-faithfulness), [DeepEval RAG evaluation](https://deepeval.com/guides/guides-rag-evaluation).
 
 ### Exercise 3.5 — Retrieval Reranking (Bonus +5)
 
