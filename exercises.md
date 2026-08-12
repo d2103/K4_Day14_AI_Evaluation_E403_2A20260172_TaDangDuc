@@ -30,11 +30,11 @@ critical.
 
 | Metric | Acceptable Low Score Scenario | Critical Low Score Scenario | Action Required |
 |---|---|---|---|
-| Faithfulness | | | |
-| Answer Relevance | | | |
-| Context Recall | | | |
-| Context Precision | | | |
-| Completeness | | | |
+| Faithfulness | Một câu trả lời từ chối đúng cho yêu cầu ngoài phạm vi có rất ít từ trùng evidence, hoặc câu trả lời rất ngắn chỉ hướng dẫn liên hệ kênh hỗ trợ. | Trả lời chính sách đơn hàng, hoàn tiền, bảo hành hoặc an toàn nhưng thêm điều kiện, giá, thời hạn hay quyền lợi không có trong context. | Lấy trace để xác minh claim; block nếu có thể gây thiệt hại/vi phạm privacy. Củng cố grounding prompt và thêm kiểm tra claim-evidence. |
+| Answer Relevance | Câu hỏi mơ hồ hoặc gồm nhiều ý; câu trả lời trước hết hỏi lại một thông tin quyết định (ví dụ ngày đặt hàng) thay vì đoán. | Context đúng nhưng câu trả lời sang chủ đề khác, không trả lời intent chính, hoặc từ chối một yêu cầu OrbitTech hợp lệ. | Kiểm tra intent/routing và prompt; bổ sung test cho intent đó. |
+| Context Recall | Với câu hỏi đơn giản, chunk top-k bỏ một chi tiết phụ nhưng answer vẫn nêu đúng toàn bộ điều kiện thiết yếu từ context khác. | Retriever bỏ date, exception, điều kiện eligibility hoặc evidence chính nên generator không thể trả lời đủ/chính xác. | Điều tra query, chunking và top-k; chỉnh retriever hoặc thêm reranking rồi đo lại. |
+| Context Precision | Retriever có một vài chunk nhiễu ở cuối nhưng evidence liên quan đã đứng đầu và câu trả lời vẫn chính xác. | Nhiễu đứng trước evidence, làm mất context window hoặc khiến answer bám vào chính sách/tình huống sai. | Rerank, cải thiện query expansion/chunk metadata và kiểm tra ranking traces. |
+| Completeness | Câu trả lời cố ý ngắn cho factual lookup và chỉ thiếu chi tiết không ảnh hưởng quyết định của khách hàng. | Bỏ sót điều kiện, ngoại lệ, thời hạn, phí hoặc bước hành động cần thiết; khách hàng có thể làm sai quy trình. | So sánh với expected answer; cải thiện context coverage, prompt yêu cầu trả lời đủ phần và thêm regression case. |
 
 ### Exercise 1.2 — Bias trong LLM-as-a-Judge
 
@@ -46,15 +46,15 @@ Ba bias thường gặp:
 
 **Câu 1: Thiết kế experiment phát hiện position bias với ít nhất hai conditions.**
 
-> *Câu trả lời:*
+> *Câu trả lời:* Tạo một tập 30 cặp đáp án cho cùng câu hỏi OrbitTech, trong đó đáp án A và B có chất lượng đã được human label hoặc được kiểm soát. Condition 1: judge nhận `Answer A` trước `Answer B`; Condition 2: đảo thứ tự để `Answer B` xuất hiện trước `Answer A`. Giữ nguyên prompt, rubric, model và nhiệt độ; randomize thứ tự các cặp và chạy nhiều lần. So sánh tỷ lệ A thắng và chênh lệch điểm giữa hai condition. Nếu đáp án đứng trước thắng hoặc được điểm cao hơn một cách có hệ thống dù nội dung không đổi, judge có position bias. Có thể thêm condition 3: hoán đổi nhãn A/B nhưng giữ vị trí để tách ảnh hưởng của nhãn khỏi vị trí.
 
 **Câu 2: Làm thế nào giảm verbosity bias bằng rubric design?**
 
-> *Câu trả lời:*
+> *Câu trả lời:* Chấm correctness, completeness, relevance, evidence và safety/actionability riêng, không có tiêu chí “dài” hoặc “nhiều chi tiết”. Rubric phải nêu rõ câu trả lời ngắn vẫn đạt 5 nếu đúng, đủ điều kiện thiết yếu và có thể hành động; thông tin lặp, lan man hoặc claim không có evidence không được cộng điểm và có thể bị trừ. Đặt giới hạn độ dài hợp lý, yêu cầu judge nêu các claim/conditions bị thiếu thay vì đánh giá theo cảm giác, và dùng ví dụ một đáp án ngắn tốt so với một đáp án dài nhưng chứa nhiễu.
 
 **Câu 3: Tại sao cần calibrate LLM judge với human labels?**
 
-> *Câu trả lời:*
+> *Câu trả lời:* LLM judge có thể hiểu rubric khác người chấm, ưu ái văn phong của chính nó, hoặc bỏ qua rủi ro domain như lộ privacy, bịa điều kiện hoàn tiền và hướng dẫn an toàn sai. So sánh điểm judge với một tập human labels giúp đo agreement, phát hiện systematic bias và điều chỉnh rubric/prompt/threshold. Human labels cũng là chuẩn tham chiếu để biết một score cao của judge thực sự có nghĩa là trải nghiệm khách hàng chấp nhận được.
 
 ### Exercise 1.3 — Evaluation trong CI/CD
 
@@ -62,13 +62,13 @@ Ba bias thường gặp:
 
 | Metric | Threshold | Lý do |
 |---|---:|---|
-| Faithfulness | | |
-| Answer Relevance | | |
-| Completeness | | |
+| Faithfulness | 0.80 | Đây là hàng rào an toàn chính: claim không được evidence hỗ trợ có thể dẫn đến quyết định sai về tiền, bảo hành, account hoặc safety. |
+| Answer Relevance | 0.70 | Cần trả lời đúng intent phần lớn cases; một số câu mơ hồ hợp lệ cần hỏi làm rõ nên không nên đặt ngưỡng cứng như faithfulness. |
+| Completeness | 0.70 | Giữ các điều kiện và bước hành động quan trọng; cho phép khác biệt nhỏ của cách diễn đạt nhưng block khi câu trả lời thường xuyên thiếu thông tin thiết yếu. |
 
 **Câu 2: Khi nào dùng offline evaluation, online evaluation và human review?**
 
-> *Câu trả lời:*
+> *Câu trả lời:* Dùng **offline evaluation** trên golden dataset trước mọi thay đổi về code, prompt, model, retriever, chunking hoặc trước release; đây là quality gate có thể lặp lại và so sánh với baseline. Dùng **online evaluation** sau deploy để theo dõi traffic thật: pass/failure proxy, retrieval traces, latency, cost, feedback và các drift/failure pattern mới. Dùng **human review** cho các case high-stakes hoặc không chắc chắn, như privacy/security incident, fraud, warranty/return dispute, safety issue, mẫu có score sát ngưỡng, và để định kỳ calibration LLM judge. Online signal đáng ngại phải tạo case đã ẩn danh để bổ sung vào golden dataset rồi đánh giá offline lại.
 
 ---
 
