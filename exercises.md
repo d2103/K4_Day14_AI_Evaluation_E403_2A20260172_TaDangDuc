@@ -319,20 +319,40 @@ thay đổi Context Recall hay không.
 
 | ID | Recall before | Recall after | Precision before | Precision after | Delta Precision |
 |---|---:|---:|---:|---:|---:|
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| | | | | | |
-| **Avg** | | | | | |
+| E01 | 0.938 | 0.938 | 0.917 | 1.000 | +0.083 |
+| E02 | 0.941 | 0.941 | 0.888 | 0.950 | +0.063 |
+| E04 | 0.952 | 0.952 | 0.888 | 1.000 | +0.113 |
+| M06 | 0.944 | 0.944 | 0.950 | 1.000 | +0.050 |
+| H01 | 0.893 | 0.893 | 0.950 | 1.000 | +0.050 |
+| **Avg** | **0.934** | **0.934** | **0.918** | **0.990** | **+0.072** |
+
+Reranker đã dùng `rerank_by_overlap(contexts, question)`: giữ nguyên năm chunks
+trong mỗi trace, rồi stable-sort giảm dần theo số content tokens chung với
+question. Ví dụ E01 giữ `OT-01-P01` ở rank 1 nhưng đưa `OT-06-P01` lên trước
+`OT-06-P02`; E04 giữ `OT-04-P03` ở rank 1 và đổi thứ tự các chunks còn lại.
+Các số là output thật của `RAGASEvaluator` trong lab, không phải score semantic
+của một cross-encoder.
 
 **Tại sao Recall dự kiến không đổi?**
 
-> *Câu trả lời:*
+> *Câu trả lời:* Context Recall là coverage trên **union** tokens của toàn bộ
+> retrieved chunks, còn reranker chỉ hoán đổi thứ tự của đúng tập năm chunks đó.
+> Union không đổi nên expected tokens được cover cũng không đổi; cả năm cases
+> đều giữ Recall y hệt trước/sau. Ngược lại, Context Precision là rank-aware
+> Average Precision nên relevant chunks xuất hiện sớm hơn sẽ tăng score. Đây là
+> lý do Precision trung bình tăng 0.918 → 0.990, trong khi Recall giữ 0.934.
 
 **Khi nào reranking không đủ và cần sửa retriever/query/chunking?**
 
-> *Câu trả lời:*
+> *Câu trả lời:* Reranking không đủ khi evidence cần thiết hoàn toàn không nằm
+> trong top-k (Recall thấp), chunking đã tách điều kiện/exception khiến một
+> chunk không đủ nghĩa, query thiếu entity/date/status quan trọng, hoặc corpus
+> không có policy đúng. A01 trong benchmark là ví dụ: scope policy không nằm
+> trong retrieved set, nên đổi thứ tự không thể ngăn medical advice; cần route
+> out-of-scope query vào `00_system_scope.md` trước retrieval. Lexical rerank
+> cũng có thể xếp tốt theo từ giống nhau nhưng sai nghĩa, vì vậy cần sửa query
+> expansion/metadata, chunk boundaries, retriever/embedding hoặc dùng
+> cross-encoder/semantic reranker và đo lại Recall lẫn Precision.
 
 ---
 
